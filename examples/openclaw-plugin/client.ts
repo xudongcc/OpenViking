@@ -216,6 +216,7 @@ async function cleanupUploadTempPath(path?: string): Promise<void> {
 }
 
 export class OpenVikingClient {
+  private canonicalRootCache = new Map<string, Partial<Record<ScopeName, string>>>();
   private identityCache = new Map<string, RuntimeIdentity>();
 
   constructor(
@@ -370,16 +371,25 @@ export class OpenVikingClient {
   }
 
   private async buildCanonicalRoot(scope: ScopeName, agentId?: string): Promise<string> {
-    const identity = await this.getRuntimeIdentity(agentId);
-    if (scope === "user") {
-      const root = this.isolateUserScopeByAgent
-        ? `viking://user/${identity.userId}/agent/${identity.agentId}`
-        : `viking://user/${identity.userId}`;
-      return root;
+    const effectiveAgentId = agentId ?? this.defaultAgentId;
+    const cached = this.canonicalRootCache.get(effectiveAgentId)?.[scope];
+    if (cached) {
+      return cached;
     }
-    const root = this.isolateAgentScopeByUser
-      ? `viking://agent/${identity.agentId}/user/${identity.userId}`
-      : `viking://agent/${identity.agentId}`;
+
+    const identity = await this.getRuntimeIdentity(agentId);
+    const root =
+      scope === "user"
+        ? this.isolateUserScopeByAgent
+          ? `viking://user/${identity.userId}/agent/${identity.agentId}`
+          : `viking://user/${identity.userId}`
+        : this.isolateAgentScopeByUser
+          ? `viking://agent/${identity.agentId}/user/${identity.userId}`
+          : `viking://agent/${identity.agentId}`;
+
+    const existing = this.canonicalRootCache.get(effectiveAgentId) ?? {};
+    existing[scope] = root;
+    this.canonicalRootCache.set(effectiveAgentId, existing);
     return root;
   }
 
